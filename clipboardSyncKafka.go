@@ -18,9 +18,9 @@ func main() {
 	//start goroutine to send the content of local clipboard to mq
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go clipboardSyncRemote(&wg)
+	go remoteClipboardChangeMonitoe(&wg)
 
-	go clipboardChangeMonitor(&wg)
+	go localClipboardChangeMonitor(&wg)
 
 	wg.Wait()
 	//check local clipboard
@@ -30,7 +30,7 @@ func main() {
 	// check if update local clipboard
 	//update local clipboard
 }
-func clipboardSyncRemote(wg *sync.WaitGroup) {
+func clipboardSyncRemoteKafka(wg *sync.WaitGroup) {
 	defer wg.Done()
 	config := sarama.NewConfig()
 	config.Consumer.Return.Errors = true
@@ -75,7 +75,7 @@ func clipboardSyncRemote(wg *sync.WaitGroup) {
 	}
 }
 
-func clipboardChangeMonitor(wg *sync.WaitGroup) {
+func clipboardChangeMonitorKafka(wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	brokerList := strings.Split("localhost:9092", ",")
