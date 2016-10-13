@@ -3,16 +3,11 @@ package main
 import (
 	"github.com/atotto/clipboard"
 	"fmt"
-	"time"
 	"strings"
 	"sync"
-
 	"github.com/Shopify/sarama"
 	"log"
-)
-
-var (
-	producer sarama.SyncProducer
+	"time"
 )
 
 func init() {
@@ -23,9 +18,10 @@ func main() {
 	//start goroutine to send the content of local clipboard to mq
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go localClipboardChangeMonitor(&wg)
-
 	go clipboardSyncRemote(&wg)
+
+	go clipboardChangeMonitor(&wg)
+
 	wg.Wait()
 	//check local clipboard
 	//send to mq
@@ -54,22 +50,32 @@ func clipboardSyncRemote(wg *sync.WaitGroup) {
 		}
 	}()
 
-	topic := "important"
+	topic := "test"
 	// How to decide partition, is it fixed value...?
-	consumer, err := master.ConsumePartition(topic, 0, sarama.OffsetOldest)
-	if err != nil {
-		panic(err)
-	}
-
+	var index int64 = 84
 	for {
-		msg := consumer.Messages()
 
-		fmt.Println("consume msg:", <-msg)
-		time.Sleep(1000 * time.Millisecond)
+		consumer, err := master.ConsumePartition(topic, 0, index)
+		if err != nil {
+			panic(err)
+		}
+
+		msg := consumer.Messages()
+		s := *<-msg
+		remoteMsg := string(s.Value)
+		clipboardContent, err := clipboard.ReadAll()
+		if err == nil {
+
+		}
+		if !strings.EqualFold(remoteMsg, clipboardContent) {
+			clipboard.WriteAll(remoteMsg)
+			fmt.Println("clipboard sync:", remoteMsg)
+		}
+		index++
 	}
 }
 
-func localClipboardChangeMonitor(wg *sync.WaitGroup) {
+func clipboardChangeMonitor(wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	brokerList := strings.Split("localhost:9092", ",")
@@ -98,7 +104,7 @@ func localClipboardChangeMonitor(wg *sync.WaitGroup) {
 		msg, err := clipboard.ReadAll()
 		//fmt.Println("msg:", msg)
 		if err != nil {
-			fmt.Println("failed to read clipboard")
+			fmt.Println("failed to read clipboard:", err)
 		}
 		if msg != ""&& !strings.EqualFold(msg, tmpMsg) {
 			tmpMsg = msg
