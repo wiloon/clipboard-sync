@@ -1,12 +1,12 @@
 package main
 
 import (
-	"github.com/atotto/clipboard"
 	"fmt"
+	"github.com/Shopify/sarama"
+	"github.com/atotto/clipboard"
+	"log"
 	"strings"
 	"sync"
-	"github.com/Shopify/sarama"
-	"log"
 	"time"
 )
 
@@ -15,12 +15,13 @@ func init() {
 }
 
 func main() {
-	//start goroutine to send the content of local clipboard to mq
+	//start gorouti ne to send the content of local clipboard to mq
 	var wg sync.WaitGroup
 	wg.Add(2)
-	go remoteClipboardChangeMonitoe(&wg)
 
-	go localClipboardChangeMonitor(&wg)
+	go clipboardSyncRemoteKafka(&wg)
+
+	go clipboardChangeMonitorKafka(&wg)
 
 	wg.Wait()
 	//check local clipboard
@@ -88,7 +89,6 @@ func clipboardChangeMonitorKafka(wg *sync.WaitGroup) {
 	config.Producer.RequiredAcks = sarama.WaitForAll // Wait for all in-sync replicas to ack the message
 	config.Producer.Retry.Max = 10                   // Retry up to 10 times to produce the message
 
-
 	// On the broker side, you may want to change the following settings to get
 	// stronger consistency guarantees:
 	// - For your broker, set `unclean.leader.election.enable` to false
@@ -106,7 +106,7 @@ func clipboardChangeMonitorKafka(wg *sync.WaitGroup) {
 		if err != nil {
 			fmt.Println("failed to read clipboard:", err)
 		}
-		if msg != ""&& !strings.EqualFold(msg, tmpMsg) {
+		if msg != "" && !strings.EqualFold(msg, tmpMsg) {
 			tmpMsg = msg
 			fmt.Println("clipboard change, msg:", msg)
 			partition, offset, err := producer.SendMessage(&sarama.ProducerMessage{
@@ -125,5 +125,3 @@ func clipboardChangeMonitorKafka(wg *sync.WaitGroup) {
 		time.Sleep(1000 * time.Millisecond)
 	}
 }
-
-
