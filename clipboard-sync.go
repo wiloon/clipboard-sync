@@ -4,6 +4,7 @@ import (
 	"github.com/atotto/clipboard"
 	"github.com/go-redis/redis/v7"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"os"
 	"os/signal"
 	"strings"
@@ -16,10 +17,22 @@ var localClipboardContent string
 var signals chan os.Signal
 
 func main() {
-	zapLogger, _ := zap.NewProduction()
+	var cores []zapcore.Core
 
-	defer zapLogger.Sync() // flushes buffer, if any
-	logger = zapLogger.Sugar()
+	level := zapcore.InfoLevel
+	writer := zapcore.Lock(os.Stdout)
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = func(t time.Time, enc zapcore.PrimitiveArrayEncoder) {
+		enc.AppendString(t.Format("2006-01-02 15:04:05"))
+	}
+	encoder := zapcore.NewConsoleEncoder(encoderConfig)
+	core := zapcore.NewCore(encoder, writer, level)
+	cores = append(cores, core)
+	combinedCore := zapcore.NewTee(cores...)
+	logger = zap.New(combinedCore,
+		zap.AddCallerSkip(2),
+		zap.AddCaller(),
+	).Sugar()
 
 	client := redis.NewClient(&redis.Options{
 		Addr:     "redis.wiloon.com:6379",
@@ -44,21 +57,21 @@ func publish(client *redis.Client) {
 	)
 
 	for {
+		logger.Debug("monitoring clipboard")
 		msg, err := clipboard.ReadAll()
-		//	logger.Infof("read from clipboard, msg: %v", msg)
+		logger.Debugf("read from clipboard, msg: %v", msg)
 
-		//fmt.Println("msg:", msg)
-		if err != nil {
-			continue
-		}
-		if msg != "" && !strings.EqualFold(msg, localClipboardContent) {
-
-			err := client.Publish("channel0", msg).Err()
-			if err != nil {
-				panic(err)
+		if err == nil {
+			if msg != "" && !strings.EqualFold(msg, localClipboardContent) {
+				err := client.Publish("channel0", msg).Err()
+				if err != nil {
+					panic(err)
+				}
+				localClipboardContent = msg
+				logger.Infof("clipboard change, publish, local clipboard content: %v, new msg: %v", localClipboardContent, msg)
 			}
-			localClipboardContent = msg
-			logger.Infof("clipboard change, publish, local clipboard content: %v, new msg: %v", localClipboardContent, msg)
+		} else {
+			logger.Errorf("failed to read clipboard: %v", err)
 		}
 		time.Sleep(1000 * time.Millisecond)
 	}
